@@ -20,17 +20,21 @@ const askQuestion = (question) => {
   });
 };
 // End
+
+let token = "";
+
 let main = async () => {
     // Sem kód
-    let choice = await askQuestion("Co chceš dělat? (1 = list items, 2 = get specific item, 3 = login, 4 = create item)\n");
-    switch (choice) {
+    while (true) {
+      let choice = await askQuestion("Co chceš dělat? (1 = list items,\n 2 = get specific item,\n 3 = login,\n 4 = create item,\n 5 = Exit)\n");
+      switch (choice) {
         case "1":
-            axios.get("/items").then((response) => {
-                console.log(response.data);
-            })
-            break;
+          await axios.get("/items").then((response) => {
+            console.log(response.data);
+          })
+          break;
         case "2":
-            let idToFetch = await askQuestion("Jaké ID chceš získat?\n");
+          let idToFetch = await askQuestion("Jaké ID chceš získat?\n");
             
             // Přeparsování stringu na číslo
             let numId = parseInt(idToFetch);
@@ -38,7 +42,7 @@ let main = async () => {
             // Podmínka pro případ, že uživatel nezadal číslo
             if (numId !== NaN) {
                 // Get request pomocí axiosu na "/item/{id}"
-                axios.get("item/" + numId).then((response) => {
+                await axios.get("item/" + numId).then((response) => {
                     // Výpis výsledku
                     console.log(response.data);
                 })
@@ -46,11 +50,38 @@ let main = async () => {
                 console.log("Zadaná hodnota není číslo");
             }
             break;
+        // Login: /login/:username/:password
+        // {
+        //    token: "token"
+        // }
         case "3":
+            let username = await askQuestion("Jaké je uživatelské jméno?");
+            let pass = await askQuestion("Jaké je heslo?");
+            console.log("Logging in...");
+            await axios.get("login/" + username + "/" + pass).then((resp) => {
+              console.log("Úspěch!");
+              token = resp.data.token;
+            }).catch((err) => {
+              console.log("Špatné Jméno/Heslo");
+              return;
+            })
             break;
+        // Přídání itemu na server
+        // POST request: axios.post()
+        // /item/add/:token/:id/:name
         case "4":
+            let id = await askQuestion("Id: ");
+            let name = await askQuestion("Name: ");
+            await axios.post("/item/add/" + token + "/" + id + "/" + name).catch((err) => {
+              console.log("Probably duplicate id, try again");
+            })
+
             break;
+        case "5":
+            console.log("Exiting...");
+            process.exit(0);
     }
+  }
 }
 
 main();
