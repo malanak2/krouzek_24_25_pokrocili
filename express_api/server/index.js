@@ -4,17 +4,8 @@ var crypto = require("crypto");
 const bodyParser = require("body-parser");
 const app = express();
 
-var con = mysql.createConnection({
-  host: "localhost",
-  user: "program",
-  password: "password",
-  authPlugins: {
-    caching_sha2_password: () => () => {},
-  },
-});
-
 const pool = mysql.createPool({
-  host: "localhost", // e.g., 'localhost'
+  host: "db", // e.g., 'localhost'
   user: "program", // e.g., 'root'
   password: "password",
   waitForConnections: true,
@@ -27,25 +18,15 @@ function queryDatabase(sql, params) {
     // Get a connection from the pool
     pool.getConnection((err, connection) => {
       if (err) {
-        console.error("Error connecting to the database:", err.stack);
-        return;
+        return reject(err);
       }
-      console.log("Connected to the database as id", connection.threadId);
-
-      // Use the connection
-      connection.query(
-        "SELECT something FROM sometable",
-        (error, results, fields) => {
-          // Handle error after the release.
-          if (error) throw error;
-
-          // Do something with the results
-          console.log(results);
-
-          // Release the connection back to the pool
-          connection.release();
-        },
-      );
+      connection.query(sql, params, (error, results) => {
+        connection.release();
+        if (error) {
+          return reject(error);
+        }
+        resolve(results);
+      });
     });
   });
 }
@@ -64,9 +45,11 @@ function generateToken() {
 }
 async function getUserID(username, password) {
   try {
-    const sql = `SELECT id FROM users WHERE username = ? AND password = ?`;
+    const sql = `SELECT id FROM api.users WHERE username = ? AND sha256_password = ?`;
     const params = [username, password];
+    console.log(`Query: ${sql}, params: ${params}`);
     const results = await queryDatabase(sql, params);
+    console.log(results);
     if (results.length > 0) return results[0].id;
     else return -1;
   } catch (err) {
@@ -75,79 +58,18 @@ async function getUserID(username, password) {
   }
 }
 
-class Item {
-  constructor(id, name, description, ownerId) {
-    this.id = id;
-    this.name = name;
-    this.description = description;
-    this.ownerId = ownerId;
-  }
-
-  // Static method to retrieve an item by ID
-  static async getById(id) {
-    const sql = "SELECT * FROM items WHERE id = ?";
-    const results = await queryDatabase(sql, [id]);
-    if (results.length > 0) {
-      const { id, name, description, owner_id } = results[0];
-      return new Item(id, name, description, owner_id);
-    }
-    return null;
-  }
-
-  // Method to save the item to the database
-  async save() {
-    if (this.id) {
-      // Update existing item
-      const sql =
-        "UPDATE items SET name = ?, description = ?, owner_id = ? WHERE id = ?";
-      await queryDatabase(sql, [
-        this.name,
-        this.description,
-        this.ownerId,
-        this.id,
-      ]);
-    } else {
-      // Insert new item
-      const sql =
-        "INSERT INTO items (name, description, owner_id) VALUES (?, ?, ?)";
-      const result = await queryDatabase(sql, [
-        this.name,
-        this.description,
-        this.ownerId,
-      ]);
-      this.id = result.insertId;
-    }
-  }
-}
-let users_db = queryDatabase("SELECT * FROM 'api'.'users'");
+let users_db = queryDatabase("SELECT * FROM api.users");
 if (users_db.length == 0) {
   queryDatabase(
-    "INSERT INTO 'api'.'users' (username, sha256_password) VALUES (?, ?)",
+    "INSERT INTO api.users (username, sha256_password) VALUES (?, ?)",
     ["root", crypto.createHash("sha256").update("root").digest("hex")],
   );
 }
 
-let items = [];
-// new Item(null, "Vítkovo Brýle", "Čerstvě Získané", 0),
-// new Item(null, "ARCHIso Installation stick", "Nutné pro každého kdo má Arch", 0),
-let item_db = queryDatabase("SELECT * FROM 'api'.'items'");
-if (item_db.length == 0) {
-  items = [
-    new Item(null, "Vítkovo Brýle", "Čerstvě Získané", 0),
-    new Item(
-      null,
-      "ARCHIso Installation stick",
-      "Nutné pro každého kdo má Arch",
-      0,
-    ),
-  ];
-  items[0].save();
-  items[1].save();
-}
-items = item_db;
 let token = "asodigkibaoa1616q1f6a1ef3d";
 app.use(bodyParser.json());
 app.get("/login/:username/:password", async (req, res) => {
+  const users = await queryDatabase("SELECT * FROM api.users;");
   let sha256 = crypto
     .createHash("sha256")
     .update(req.params.password)
@@ -155,11 +77,12 @@ app.get("/login/:username/:password", async (req, res) => {
   let uid = await getUserID(req.params.username, sha256);
   if (uid != -1) {
     let token = generateToken();
-    const res = await queryDatabase(
-      `INSERT INTO 'api'.'tokens' (user_id, token, expires) VALUES (?, ?, ?)`,
-      [uid, token, new Date(now.getTime() + 10 * 60 * 1000)],
+    const result = await queryDatabase(
+      `INSERT INTO api.tokens (user_id, token, expires) VALUES (?, ?, NOW())`,
+      [uid, token],
     ); // con.query();
-    res.json({ token: token });
+    console.log(result);
+    res.status(200).json({ token: token });
   } else {
     res
       .status(401)
@@ -167,51 +90,71 @@ app.get("/login/:username/:password", async (req, res) => {
   }
 });
 
-app.get("/register/:username/:password"),
-  (req, res) => {
-    if (
-      queryDatabase(
-        "SELECT id FROM 'api'.'users' WHERE username = ?",
-        req.params.username,
-      ).count > 0
-    ) {
+app.get("/register/:username/:password", async (req, res) => {
+  let c = await queryDatabase(
+    "SELECT * FROM api.users WHERE username = ?",
+    req.params.username,
+  );
+  console.log(c);
+  try {
+    if (typeof c[0].id != "undefined") {
       res.status(400).json({ message: "Username already exists" });
       return;
     }
-    let sha256 = crypto
-      .createHash("sha256")
-      .update(req.params.password)
-      .digest("hex");
-    queryDatabase(
-      "INSERT INTO 'api'.'users' (username, sha256_password) VALUES (?, ?)",
-      [req.params.username, sha256],
-    );
-    return res.status(200).json({ message: "User created" });
-  };
+  } catch (e) {}
+  let sha256 = crypto
+    .createHash("sha256")
+    .update(req.params.password)
+    .digest("hex");
+  await queryDatabase(
+    "INSERT INTO api.users (username, sha256_password) VALUES (?, ?)",
+    [req.params.username, sha256],
+  );
+  return res.status(200).json({ message: "User created" });
+});
 
-app.get("/items", (req, res) => {
+app.get("/items", async (req, res) => {
+  let items = await queryDatabase("SELECT * FROM api.items;");
   res.json({ result: 200, items: items });
 });
 
-app.get("/item/:id", (req, res) => {
-  const item = items.find((i) => i.id === parseInt(req.params.id));
-  if (!item) return res.status(404).json({ message: "Item not found" });
+app.get("/item/:id", async (req, res) => {
+  let item = await queryDatabase(
+    `SELECT * FROM api.items WHERE id = ${req.params.id}`,
+  );
+  if (item.length == 0)
+    return res.status(404).json({ message: "Item not found" });
   res.status(200).json(item);
 });
 
-app.post("/item/add/:token/:id/:name", (req, res) => {
-  let inToken = req.params.token;
-  if (inToken != token) {
-    res.status(502).json({ message: "Unauthorized - Invalid Token" });
-    return;
+app.post("/item/add/:token/:name/:desc", async (req, res) => {
+  const sql = `SELECT * FROM api.tokens WHERE token = ?`;
+  const results = await queryDatabase(sql, [req.params.token]);
+  console.log(results);
+  try {
+    if (results[0].id == "undefined") {
+    }
+  } catch (e) {
+    console.log(e);
+    return res.status(400).json({ message: "asd" });
   }
-  const item = items.find((i) => i.id === parseInt(req.params.id));
-  if (!item) {
-    items.push({ id: parseInt(req.params.id), name: req.params.name });
-    return res.json(items.find((i) => i.id == parseInt(req.params.id)));
+  let idb = await queryDatabase(
+    `SELECT * FROM api.items WHERE name = '${req.params.name}'`,
+  );
+  console.log(idb);
+  try {
+    idb[0].id;
+  } catch (e) {let item = await queryDatabase(
+      `INSERT INTO api.items (name,descripiton, owner_id) VALUES ("${req.params.name}", "${req.params.desc}", ${results[0].user_id})`,
+    );
+    return res.json(item.id);
+    console.log("No such item")}
+  if (true) {
+    
   }
-
-  return res.status(400).json({ message: "Item with this id already exists" });
+  return res
+        .status(400)
+        .json({ message: "Item with this name already exists" });
 });
 
 app.listen(3000, () => {

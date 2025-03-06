@@ -70,10 +70,12 @@ let main = async () => {
         // POST request: axios.post()
         // /item/add/:token/:id/:name
         case "4":
-            let id = await askQuestion("Id: ");
-            let name = await askQuestion("Name: ");
+            let id = await askQuestion("Name: ");
+            let name = await askQuestion("Desc : ");
+            token = "m1HhlnQmANXAR6djvVoSmnJfv1Iz1LCt9ZPK69e3XSJkMkyIWDlVzUy6ybthyCFsrudpyGKd478jsILsPEtaj4PJYOjyEiC7GyaNW9X05TBmfPX29FxGI0glNYiMLbB7dgF38fpKQItnBQc9j7pEVi9DCleV7xwd6YVxOU3yzkSjUDQ7nEMlLejgaumuEVpA9oTcllRBaNEE8ogSqB5JJuS4Fb0Oj8MpfxE7cct8qDHbtkxkHhPF9EAeQq7blD";
+            token = "MYwiP0oOaM6mfjRVr18sJEr5ON91YtrwN8cSnPVyFSWGle34DwLGzdUPBoDrqxahVDZRrFtkLw9RmUHdFSICKNy443POMN47Y7rY7lXEDaxg8niaFjmjkg2I1wFBZIU3GyGym9jX8cA5J60C6YfxHko6m6ETT8OOYSNtYKpCva3nvmnoRLbPZHVnfwXHZ3iJxdNpPyUkbxi3NTuwAGf98u9AunQm0lPHkZBvEhZH9voNH8v0gmJsgcu7ojO6yA";
             await axios.post("/item/add/" + token + "/" + id + "/" + name).catch((err) => {
-              console.log("Probably duplicate id, try again");
+              console.log("Probably duplicate id, try again" + err);
             })
 
             break;
